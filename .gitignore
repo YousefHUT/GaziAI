@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+api.txt
+uploads/
+deneme.py
+models/
