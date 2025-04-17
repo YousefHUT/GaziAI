@@ -5,20 +5,23 @@ from flask import Flask, request, jsonify
 import os
 from flask_cors import CORS
 
-# Desteklenen dosya uzantıları
-ALLOWED_EXTENSIONS = {'pdf', 'txt'}
+__version__ = '0.1'
+__author__ = 'YousefHUT'
 
 # Cihaza göre CUDA veya CPU kullanımı
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Sohbet modelini yükle (FP16 modunda çalıştırarak bellek kullanımını azaltıyoruz)
+# Sohbet modelini yükle (İngilizce konuşabilen herhangi bir dil modelini uygun olacak şekilde ayarlayabilirsiniz.)
 model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
-model = model.half()  # FP16 moduna geçiş
+model = model.half()  # FP16 moduna geçiş (Optimizasyon)
 model.to(device)
 
-# Çeviri pipeline'ları (CPU üzerinde çalıştırarak GPU belleğini boşaltıyoruz)
+#PDF yazısı için olan değişteni belirleme
+pdftext = ""
+
+# Çeviri pipeline'ları
 translator_tr_to_en = pipeline(
     "translation",
     model="models/tr-to-en",      # Türkçe'den İngilizce
@@ -33,15 +36,16 @@ translator_en_to_tr = pipeline(
     device=-1  # CPU üzerinde çalıştır
 )
 
-# Sohbet geçmişi belleği
+# Sohbet geçmişi hafızası
 conversation_history = []
-MAX_HISTORY_LENGTH = 3  # Max mesaj sayısı
+MAX_HISTORY_LENGTH = 3  # Mesaj hatırlama sayısı
 
 # Flask uygulaması
 app = Flask(__name__)
 CORS(app)
 
 # Flask uygulaması için dosya yükleme ayarları
+ALLOWED_EXTENSIONS = ['pdf','docx','txt']
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Maksimum dosya boyutu 16MB
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -49,7 +53,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Çıkış için ekran kartını temizle
+# Ekran kartı belleğini temizleme fonksiyonu
 def clear_gpu_memory():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -57,12 +61,12 @@ def clear_gpu_memory():
 
 @app.route('/')
 def index():
-    with open('index.html', 'r') as file:
+    with open('index.html', 'r', encoding='utf-8') as file:
         return file.read()
 
 @app.route('/chat', methods=['GET'])
-def chat():
-    with open('chat.html', 'r') as file:
+def chat_get():
+    with open('chat.html', 'r', encoding='utf-8') as file:
         return file.read()
 
 @app.route('/chat', methods=['POST'])
@@ -78,66 +82,86 @@ def chat_message():
 def upload_form():
     return '''
     <!doctype html>
-    <title>Upload PDF</title>
-    <h1>Upload PDF</h1>
-    <form method=post enctype=multipart/form-data>
-      <input type=file name=file>
-      <input type=text name=question placeholder="Sorunuzu buraya yazın">
-      <input type=submit value=Upload>
+    <title>Dosya Yükle</title>
+    <h1>Dosya Yükle</h1>
+    <form method="post" enctype="multipart/form-data">
+      <input type="file" name="file">
+      <input type="text" name="question" placeholder="Sorunuzu buraya yazın">
+      <input type="submit" value="Upload">
     </form>
     '''
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    global pdftext
     uploaded_file = request.files['file']
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
     uploaded_file.save(file_path)
-    text = extract_file_text(file_path)  # Extract text from the uploaded PDF
+    pdftext = extract_file_text(file_path)  # PDF'ten yazı çıkarma
     question = request.form['question']
     answer = message(question)
     return jsonify({"answer": answer})
 
 def message(prompt):
     global conversation_history
+    global pdftext
+
     # Kullanıcının mesajını Türkçe'den İngilizce'ye çevir
     translation_result = translator_tr_to_en(prompt)
     user_input_en = translation_result[0]['translation_text']
 
-    # Kullanıcının girdisini sohbet geçmişine ekle
+    # Kullanıcının girdisini sohbet geçmişine ekle (etiket ekleyerek)
     conversation_history.append(f"User: {user_input_en}")
-    conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
-    # Sohbet geçmişini formatla ve cevap başlığını ekle
-    formatted_history = "\n".join(conversation_history) + "\nGaziAI:"
+    if pdftext != "":
+        conversation_history.append(f"PDF: {pdftext}")
+        conversation_history = conversation_history[-(MAX_HISTORY_LENGTH + 1):]
+    else:
+        conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
 
-    # Yeni prompt: Direkt olarak cevap üretmesini iste
-    prompt_text = ("Your name is GaziAI, an helpful AI support assistant. Provide a concise and helpful response "
-                   "to the user's query based on the following conversation, without reiterating your introduction or instructions:\n"
-                   + formatted_history)
-    
+    # Sohbet geçmişini formatla (bu kısım sadece referans amaçlı, final yanıta eklenmeyecek)
+    formatted_history = "\n".join(conversation_history)
+
+    # AI için açıklama metni (Kendi dil modelinize göre ayarlayabilirsiniz)
+    prompt_text = (
+        "You are GaziAI, a highly capable and efficient AI support assistant. "
+        "Your role is to provide a concise, focused answer to the user's inquiry using only the conversation context "
+        "and any supplemental content provided (such as PDF text). "
+        "Do NOT repeat any conversation labels (e.g., 'User:' or 'GaziAI') or meta instructions in your final answer. "
+        "If asked about your language, reply with 'I am writing Turkish.' "
+        "Answer the inquiry directly without echoing any instructions or context.\n\n"
+        "Conversation context:\n" + formatted_history + "\n\nAnswer:"
+    )
+
     # Tokenize işlemi
-    inputs = tokenizer(prompt_text, return_tensors="pt")
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-    inputs["input_ids"] = inputs["input_ids"].clamp(0, tokenizer.vocab_size - 1)
+    inputs_tok = tokenizer(prompt_text, return_tensors="pt")
+    inputs_tok = {k: v.to(device) for k, v in inputs_tok.items()}
+    inputs_tok["input_ids"] = inputs_tok["input_ids"].clamp(0, tokenizer.vocab_size - 1)
 
-    # Modelden İngilizce cevap üretimi (torch.no_grad() ile bellek optimizasyonu)
+    # Modelden İngilizce yanıt üretimi
     with torch.no_grad():
         outputs = model.generate(
-            **inputs,
-            max_new_tokens=150,  # Daha kısa yanıtlar için token sayısını düşürdük
+            **inputs_tok,
+            max_new_tokens=150,
             do_sample=True,
-            temperature=0.7,
+            temperature=0.5,
             repetition_penalty=1.5,
-            top_k=50,
-            top_p=0.9,
+            top_k=30,
+            top_p=0.8,
             eos_token_id=[tokenizer.eos_token_id]
         )
 
-    # Üretilen cevap hazırlandıktan sonra decode edilip işleniyor
+    # Üretilen yanıtı decode etme
     english_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    if "GaziAI:" in english_response:
-        english_response = english_response.split("GaziAI:")[-1].strip()
+    if "Answer:" in english_response:
+        english_response = english_response.split("Answer:")[-1].strip()
 
-    # Üretilen İngilizce cevabı Türkçe'ye çevir
+    # Özel çıktılar
+    if prompt.lower().strip() in ["which language are you speaking?", "what language are you speaking?"]:
+        english_response = "I am writing Turkish."
+    if prompt.lower().strip() in ["whats your name", "Who are you"]:
+        english_response = "I am GaziAI. I am an helpful AI assistant"
+
+    # Üretilen İngilizce cevabı Türkçe'ye çevirme
     translation_response = translator_en_to_tr(english_response)
     turkish_response = translation_response[0]['translation_text']
     return turkish_response
@@ -159,5 +183,5 @@ def extract_file_text(file_path):
         return f"Yazıyı çıkarırken hata oluştu {str(e)}"
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
     clear_gpu_memory()
