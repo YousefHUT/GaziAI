@@ -18,8 +18,8 @@ model = AutoModelForCausalLM.from_pretrained(model_name)
 model = model.half()  # FP16 moduna geçiş (Optimizasyon)
 model.to(device)
 
-#PDF yazısı için olan değişteni belirleme
-pdftext = ""
+#Dosya yazısı için olan değişteni belirleme
+filetext = ""
 
 # Çeviri pipeline'ları
 translator_tr_to_en = pipeline(
@@ -93,18 +93,38 @@ def upload_form():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    global pdftext
+    global filetext
+    if 'file' not in request.files:
+        return jsonify({"error": "Dosya bulunamadı."}), 400
+
     uploaded_file = request.files['file']
+    if uploaded_file.filename == '':
+        return jsonify({"error": "Dosya adı boş olamaz."}), 400
+
+    if not allowed_file(uploaded_file.filename):
+        return jsonify({"error": "Yalnızca .pdf, .docx ve .txt dosyaları desteklenmektedir."}), 400
+
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
-    uploaded_file.save(file_path)
-    pdftext = extract_file_text(file_path)  # PDF'ten yazı çıkarma
-    question = request.form['question']
-    answer = message(question)
-    return jsonify({"answer": answer})
+    try:
+        uploaded_file.save(file_path)
+
+        if os.path.getsize(file_path) == 0:
+            return jsonify({"error": "Dosya boş. Lütfen geçerli bir dosya yükleyin."}), 400
+
+        filetext = extract_text(file_path)  # Dosyadan yazı çıkarma
+        question = request.form.get('question', '')
+        if not question:
+            return jsonify({"error": "Soru alanı boş olamaz."}), 400
+
+        answer = message(question)
+        return jsonify({"answer": answer})
+
+    except Exception as e:
+        return jsonify({"error": f"Yazı işlenirken bir hata oluştu: {str(e)}"}), 500
 
 def message(prompt):
     global conversation_history
-    global pdftext
+    global filetext
 
     # Kullanıcının mesajını Türkçe'den İngilizce'ye çevir
     translation_result = translator_tr_to_en(prompt)
@@ -112,9 +132,10 @@ def message(prompt):
 
     # Kullanıcının girdisini sohbet geçmişine ekle (etiket ekleyerek)
     conversation_history.append(f"User: {user_input_en}")
-    if pdftext != "":
-        conversation_history.append(f"PDF: {pdftext}")
+    if filetext != "":
+        conversation_history.append(f"PDF: {filetext}")
         conversation_history = conversation_history[-(MAX_HISTORY_LENGTH + 1):]
+        filetext = ""
     else:
         conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
 
@@ -132,55 +153,42 @@ def message(prompt):
         "Conversation context:\n" + formatted_history + "\n\nAnswer:"
     )
 
-    # Tokenize işlemi
-    inputs_tok = tokenizer(prompt_text, return_tensors="pt")
-    inputs_tok = {k: v.to(device) for k, v in inputs_tok.items()}
-    inputs_tok["input_ids"] = inputs_tok["input_ids"].clamp(0, tokenizer.vocab_size - 1)
-
-    # Modelden İngilizce yanıt üretimi
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs_tok,
-            max_new_tokens=150,
-            do_sample=True,
-            temperature=0.5,
-            repetition_penalty=1.5,
-            top_k=30,
-            top_p=0.8,
-            eos_token_id=[tokenizer.eos_token_id]
-        )
-
-    # Üretilen yanıtı decode etme
-    english_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    if "Answer:" in english_response:
-        english_response = english_response.split("Answer:")[-1].strip()
-
     # Özel çıktılar
-    if prompt.lower().strip() in ["which language are you speaking?", "what language are you speaking?"]:
+    if user_input_en.lower().strip() in ["which language are you speaking?", "what language are you speaking?"]:
         english_response = "I am writing Turkish."
-    if prompt.lower().strip() in ["whats your name", "Who are you"]:
+    if user_input_en.lower().strip() in ["whats your name", "Who are you"]:
         english_response = "I am GaziAI. I am an helpful AI assistant"
+    else:
+        # Tokenize işlemi
+        inputs_tok = tokenizer(prompt_text, return_tensors="pt")
+        inputs_tok = {k: v.to(device) for k, v in inputs_tok.items()}
+        inputs_tok["input_ids"] = inputs_tok["input_ids"].clamp(0, tokenizer.vocab_size - 1)
+
+        # Modelden İngilizce yanıt üretimi
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs_tok,
+                max_new_tokens=150,
+                do_sample=True,
+                temperature=0.5,
+                repetition_penalty=1.5,
+                top_k=30,
+                top_p=0.8,
+                eos_token_id=[tokenizer.eos_token_id]
+            )
+
+        # Üretilen yanıtı decode etme
+        english_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        # Yanıtı temizleme (etiketleri kaldırma)
+        if "Answer:" in english_response:
+            english_response = english_response.split("Answer:")[-1].strip()
 
     # Üretilen İngilizce cevabı Türkçe'ye çevirme
     translation_response = translator_en_to_tr(english_response)
     turkish_response = translation_response[0]['translation_text']
     return turkish_response
 
-def extract_file_text(file_path):
-    if not os.path.exists(file_path):
-        return "Dosya bulunamadı."
-    if os.path.getsize(file_path) == 0:
-        return "Dosya boş. Lütfen geçerli bir PDF dosyası yükleyin."
-    if not os.access(file_path, os.R_OK):
-        return "Dosyaya erişim izni yok. Lütfen dosyanın izinlerini kontrol edin."
-    if not os.path.isfile(file_path):
-        return "Geçersiz dosya yolu. Lütfen geçerli bir dosya yolu sağlayın."
-    if not file_path.endswith('.pdf'):
-        return "Yalnızca PDF dosyaları desteklenmektedir."
-    try:
-        return extract_text(file_path)
-    except Exception as e:
-        return f"Yazıyı çıkarırken hata oluştu {str(e)}"
 
 if __name__ == "__main__":
     app.run(debug=False)
