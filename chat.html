@@ -11,77 +11,114 @@
     .dark-theme #input-container input { background: #333; color: #fff; border-color: #444; }
     .dark-theme #input-container button { background: #0284C7; }
     .dark-theme #input-container button:hover { background: #7C3AED; }
-    .dark-theme #file-upload label { color: #fff; }
-
+    .dark-theme #upload-button { color: #fff; }
+    
     /* --- Genel Düzen --- */
     body {
       font-family: Arial, sans-serif;
-      margin: 0; padding: 0;
-      display: flex; flex-direction: column;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
       height: 100vh;
+      /* Geçiş animasyonu */
+      transition: background-color 0.5s ease, color 0.5s ease;
     }
     header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 20px; background: linear-gradient(-90deg,  #00f2fe , #4facfe, #0284C7, #0284C7, #7C3AED); color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 20px;
+      background: linear-gradient(-90deg, #00f2fe, #4facfe, #0284C7, #0284C7, #7C3AED);
+      color: #fff;
     }
     #chat-container {
-      flex: 1; display: flex; flex-direction: column;
-      padding: 10px; overflow-y: auto; border: 1px solid #ccc;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
     }
     .message { margin: 5px 0; }
     .user-message { text-align: right; color: #0284C7; }
-    .bot-message  { text-align: left;  color: #7C3AED; }
-
+    .bot-message  { text-align: left; color: #7C3AED; }
+    
     #input-container {
-      display: flex; padding: 10px; border-top: 1px solid #ccc;
+      display: flex;
+      padding: 10px;
+      border-top: 1px solid #ccc;
     }
     #input-container input {
-      flex: 1; padding: 10px; margin-right: 10px;
-      border: 1px solid #ccc; border-radius: 5px;
+      flex: 1;
+      padding: 10px;
+      margin-right: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
     }
+    /* Güncellenmiş Gönder ve Tema Buton Stili */
     #input-container button {
-      padding: 10px 20px; border: none;
-      background: #0284C7; color: #fff;
-      border-radius: 5px; cursor: pointer;
+      padding: 10px 20px;
+      margin-right: 5px;
+      border: none;
+      background: #0284C7;
+      color: #fff;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.3s ease;
     }
-    #input-container button:hover { background: #7C3AED; }
-    #file-upload { margin: 10px; }
-
+    #input-container button:hover {
+      background: #7C3AED;
+    }
+    
+    /* --- Drop Overlay CSS --- */
+    #drop-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.2);
+      border: 2px dashed #0284C7;
+      color: #0284C7;
+      font-size: 1.5rem;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    
     /* --- INLINE LOADER --- */
-
-  .loader-inline {
-    display: flex;
-    justify-content: flex-start; /* soldan */
-    align-items: center;
-    padding: 8px 0 8px 5px;
-  }
-
-  .loader-inline .g-loader {
-    position: relative;
-    width: 32px;
-    height: 32px;
-    border: 4px solid #0284C7;
-    border-right-color: transparent;
-    border-radius: 50%;
-    animation: rotateG 1.2s linear infinite;
-  }
-
-  .loader-inline .g-loader::after {
-    content: '';
-    position: absolute;
-    width: 10px;
-    height: 4px;
-    background-color: #7C3AED;
-    top: 50%;
-    left: 55%;
-    transform: translate(-50%, -50%);
-    border-radius: 2px;
-  }
-
-  @keyframes rotateG {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
+    .loader-inline {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 8px 0 8px 5px;
+    }
+    .loader-inline .g-loader {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      border: 4px solid #0284C7;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: rotateG 1.2s linear infinite;
+    }
+    .loader-inline .g-loader::after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 4px;
+      background-color: #7C3AED;
+      top: 50%;
+      left: 55%;
+      transform: translate(-50%, -50%);
+      border-radius: 2px;
+    }
+    @keyframes rotateG {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -95,12 +132,14 @@
   <div id="input-container">
     <input type="text" id="user-input" placeholder="Mesajınızı buraya yazın…" onkeypress="if(event.key==='Enter') sendMessage()">
     <button onclick="sendMessage()">Gönder</button>
+    <button id="upload-button" onclick="triggerFileDialog()">Dosya Yükle</button>
   </div>
 
-  <div id="file-upload">
-    <label for="file-input">Dosya yükleyin:</label>
-    <input type="file" id="file-input" onchange="uploadFile()">
-  </div>
+  <!-- Gizli dosya inputu -->
+  <input type="file" id="file-input" onchange="uploadFile()" style="display: none;">
+
+  <!-- Sürükle Bırak için Overlay -->
+  <div id="drop-overlay">Dosyayı buraya bırakın</div>
 
   <script>
     function toggleTheme() {
@@ -120,9 +159,7 @@
       hideLoader();
       inlineLoader = document.createElement('div');
       inlineLoader.className = 'loader-inline';
-      inlineLoader.innerHTML = `
-        <div class="g-loader"></div>
-      `;
+      inlineLoader.innerHTML = `<div class="g-loader"></div>`;
       chatContainer.appendChild(inlineLoader);
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
@@ -166,13 +203,23 @@
       });
     }
 
+    function triggerFileDialog() {
+      document.getElementById('file-input').click();
+    }
+
     function uploadFile() {
       const fileInput = document.getElementById('file-input');
       const file = fileInput.files[0];
       if (!file) return;
+      handleFileUpload(file);
+      fileInput.value = "";
+    }
+
+    function handleFileUpload(file) {
+      if (!file) return;
+      showLoader();
       const fd = new FormData();
       fd.append('file', file);
-      showLoader();
       fetch('/upload', { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {
@@ -185,6 +232,36 @@
           addMessage('bot', 'Üzgünüz, dosya yüklenirken bir hata oluştu.');
         });
     }
+
+    let dragCounter = 0;
+    const dropOverlay = document.getElementById('drop-overlay');
+
+    document.addEventListener('dragenter', function(e) {
+      e.preventDefault();
+      dragCounter++;
+      dropOverlay.style.display = 'flex';
+    });
+
+    document.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter === 0) {
+        dropOverlay.style.display = 'none';
+      }
+    });
+
+    document.addEventListener('dragover', function(e) {
+      e.preventDefault();
+    });
+
+    document.addEventListener('drop', function(e) {
+      e.preventDefault();
+      dragCounter = 0;
+      dropOverlay.style.display = 'none';
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        handleFileUpload(e.dataTransfer.files[0]);
+      }
+    });
   </script>
 </body>
 </html>
