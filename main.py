@@ -4,6 +4,7 @@ from pdfminer.high_level import extract_text
 from flask import Flask, request, jsonify
 import os
 from flask_cors import CORS
+from docx import Document
 
 __version__ = '0.2'
 __author__ = 'YousefHUT'
@@ -98,7 +99,18 @@ def upload_file():
         if os.path.getsize(file_path) == 0:
             return jsonify({"error": "Dosya boş. Lütfen geçerli bir dosya yükleyin."})
 
-        filetext = extract_text(file_path)  # Dosyadan yazı çıkarma
+        # Dosya türüne göre yazı çıkarma
+        if uploaded_file.filename.lower().endswith('.pdf'):
+            filetext = extract_text(file_path)  # PDF dosyasından yazı çıkarma
+        elif uploaded_file.filename.lower().endswith('.txt'):
+            with open(file_path, 'r', encoding='utf-8') as txt_file:
+                filetext = txt_file.read()  # TXT dosyasından yazı çıkarma
+        elif uploaded_file.filename.lower().endswith('.docx'):
+            doc = Document(file_path)
+            filetext = "\n".join([paragraph.text for paragraph in doc.paragraphs])  # DOCX dosyasından yazı çıkarma
+        else:
+            return jsonify({"error": "Desteklenmeyen dosya türü."})
+
         question = request.form.get('question', '')
         if not question:
             return jsonify({"error": "Soru alanı boş olamaz."})
