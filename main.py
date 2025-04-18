@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 import os
 from flask_cors import CORS
 
-__version__ = '0.1'
+__version__ = '0.2'
 __author__ = 'YousefHUT'
 
 # Cihaza göre CUDA veya CPU kullanımı
@@ -73,54 +73,39 @@ def chat_get():
 def chat_message():
     data = request.get_json()
     if not data or 'message' not in data:
-        return jsonify({"error": "Mesaj bulunamadı."}), 400
+        return jsonify({"error": "Mesaj bulunamadı."})
     user_message = data['message']
     reply_text = message(user_message)
     return jsonify({"reply": reply_text})
-
-@app.route('/upload', methods=['GET'])
-def upload_form():
-    return '''
-    <!doctype html>
-    <title>Dosya Yükle</title>
-    <h1>Dosya Yükle</h1>
-    <form method="post" enctype="multipart/form-data">
-      <input type="file" name="file">
-      <input type="text" name="question" placeholder="Sorunuzu buraya yazın">
-      <input type="submit" value="Upload">
-    </form>
-    '''
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global filetext
     if 'file' not in request.files:
-        return jsonify({"error": "Dosya bulunamadı."}), 400
+        return jsonify({"error": "Dosya bulunamadı."})
 
     uploaded_file = request.files['file']
     if uploaded_file.filename == '':
-        return jsonify({"error": "Dosya adı boş olamaz."}), 400
+        return jsonify({"error": "Dosya adı boş olamaz."})
 
     if not allowed_file(uploaded_file.filename):
-        return jsonify({"error": "Yalnızca .pdf, .docx ve .txt dosyaları desteklenmektedir."}), 400
+        return jsonify({"error": "Yalnızca .pdf, .docx ve .txt dosyaları desteklenmektedir."})
 
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
     try:
         uploaded_file.save(file_path)
 
         if os.path.getsize(file_path) == 0:
-            return jsonify({"error": "Dosya boş. Lütfen geçerli bir dosya yükleyin."}), 400
+            return jsonify({"error": "Dosya boş. Lütfen geçerli bir dosya yükleyin."})
 
         filetext = extract_text(file_path)  # Dosyadan yazı çıkarma
         question = request.form.get('question', '')
         if not question:
-            return jsonify({"error": "Soru alanı boş olamaz."}), 400
-
-        answer = message(question)
-        return jsonify({"answer": answer})
+            return jsonify({"error": "Soru alanı boş olamaz."})
+        return jsonify({"answer": uploaded_file.filename, "text": filetext})
 
     except Exception as e:
-        return jsonify({"error": f"Yazı işlenirken bir hata oluştu: {str(e)}"}), 500
+        return jsonify({"error": f"Yazı işlenirken bir hata oluştu: {str(e)}"})
 
 def message(prompt):
     global conversation_history
