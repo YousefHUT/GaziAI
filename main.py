@@ -9,18 +9,43 @@ from docx import Document
 __version__ = '0.2'
 __author__ = 'YousefHUT'
 
+print("GaziAI - Gaziosmanpaşa Üniversitesi Yapay Zeka Destekli Sohbet Botu programı başlatılıyor...")
+print("Yazılım versiyonu:", __version__)
+print("Yazılım geliştiricisi:", __author__)
+
+# Sohbet geçmişi hafızası
+conversation_history = []
+MAX_HISTORY_LENGTH = 3  # Mesaj hatırlama sayısı
+
+# Flask uygulaması
+app = Flask(__name__)
+CORS(app)
+
+# Flask uygulaması için dosya yükleme ayarları
+SAVEFILES = True
+ALLOWED_EXTENSIONS = ['pdf','docx','txt']
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Maksimum dosya boyutu 16MB
+app.config['UPLOAD_FOLDER'] = 'uploads'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Yükleme klasörünü oluştur
+# Önceki yükleme klasörünü temizle
+if os.path.exists(app.config['UPLOAD_FOLDER']) and not SAVEFILES:
+    for file in os.listdir(app.config['UPLOAD_FOLDER']):
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+filetext = "" #Dosya yazısı için olan değişteni belirleme
+
+
 # Cihaza göre CUDA veya CPU kullanımı
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Sohbet modelini yükle (İngilizce konuşabilen herhangi bir dil modelini uygun olacak şekilde ayarlayabilirsiniz.)
+print("Modeller yükleniyor...")
 model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
 model = model.half()  # FP16 moduna geçiş (Optimizasyon)
 model.to(device)
-
-#Dosya yazısı için olan değişteni belirleme
-filetext = ""
 
 # Çeviri pipeline'ları
 translator_tr_to_en = pipeline(
@@ -36,20 +61,7 @@ translator_en_to_tr = pipeline(
     tokenizer="models/en-to-tr",
     device=-1  # CPU üzerinde çalıştır
 )
-
-# Sohbet geçmişi hafızası
-conversation_history = []
-MAX_HISTORY_LENGTH = 3  # Mesaj hatırlama sayısı
-
-# Flask uygulaması
-app = Flask(__name__)
-CORS(app)
-
-# Flask uygulaması için dosya yükleme ayarları
-ALLOWED_EXTENSIONS = ['pdf','docx','txt']
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Maksimum dosya boyutu 16MB
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+print("Modeller yüklendi.")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -188,5 +200,8 @@ def message(prompt):
 
 
 if __name__ == "__main__":
+    print("Flask uygulaması çalışıyor!")
     app.run(debug=False)
-    clear_gpu_memory()
+    print("Flask uygulaması durduruldu.")
+    print("GPU belleği temizleniyor...")
+    clear_gpu_memory() # GPU belleğini temizle
