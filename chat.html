@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GaziAI: Bir Yapay Zeka Asistanı</title>
+  <link rel="icon" href="icons/GaziAI.ico" type="image/x-icon">
   <style>
     /* --- Mevcut Tema CSS --- */
     .dark-theme { background: #121212; color: #fff; }
@@ -224,7 +225,19 @@
         .then(r => r.json())
         .then(data => {
           hideLoader();
-          addMessage('bot', `Dosya yüklendi: ${data.message}`);
+          if (data.error) {
+            addMessage('bot', data.error);
+            return;
+            
+          }
+          else if (data.message) {
+            addMessage('bot', data.message);
+            return;
+          }
+          else if (data.filename)
+          {
+            addMessage('bot', `Dosya yüklendi: ${data.message}`);
+          }
         })
         .catch(err => {
           console.error(err);

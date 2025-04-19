@@ -1,39 +1,39 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import torch
 from pdfminer.high_level import extract_text
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 import os
 from flask_cors import CORS
 from docx import Document
 
-__version__ = '0.3'
+__version__ = '0.4'
 __author__ = 'YousefHUT (Yusuf Eren HUT)'
 
 print("GaziAI - Gaziosmanpaşa Üniversitesi Yapay Zeka Destekli Sohbet Botu programı başlatılıyor...")
 print("Yazılım versiyonu:", __version__)
 print("Yazılım geliştiricisi:", __author__)
 
-# Sohbet geçmişi hafızası
-conversation_history = []
 MAX_HISTORY_LENGTH = 3  # Mesaj hatırlama sayısı
 
-# Flask uygulaması
 app = Flask(__name__)
 CORS(app)
 
-# Flask uygulaması için dosya yükleme ayarları
-SAVEFILES = True
-ALLOWED_EXTENSIONS = ['pdf','docx','txt']
+# Session için secret key
+app.secret_key = "Ruhi1234"  # Güvenli bir secret key kullanın!
+
+# Flask uygulaması dosya yükleme ayarları
+ALLOWED_EXTENSIONS = ['pdf', 'docx', 'txt']
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Maksimum dosya boyutu 16MB
 app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Yükleme klasörünü oluştur
-# Önceki yükleme klasörünü temizle
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Önceki yükleme klasörünü temizleme (isteğe bağlı)
+SAVEFILES = True
 if os.path.exists(app.config['UPLOAD_FOLDER']) and not SAVEFILES:
     for file in os.listdir(app.config['UPLOAD_FOLDER']):
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file)
         if os.path.isfile(file_path):
             os.remove(file_path)
-filetext = "" #Dosya yazısı için olan değişkeni belirleme
 
 # Cihaza göre CUDA veya CPU kullanımı
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -80,11 +80,11 @@ def index():
     with open('index.html', 'r', encoding='utf-8') as file:
         return file.read()
 
-@app.route('/chat', methods=['GET'])
+@app.route('/chat', methods=['GET'])#Sohbet sayfası
 def chat_get():
+    session.clear()  # Oturumu sıfırla
     with open('chat.html', 'r', encoding='utf-8') as file:
         return file.read()
-
 @app.route('/chat', methods=['POST'])
 def chat_message():
     data = request.get_json()
@@ -94,54 +94,57 @@ def chat_message():
     reply_text = message(user_message)
     return jsonify({"reply": reply_text})
 
-@app.route('/upload', methods=['POST'])
+@app.route('/clear_session', methods=['POST'])# Oturum temizleme
+def clear_session():
+    session.clear()
+    return jsonify({"status": "session cleared"})
+
+@app.route('/upload', methods=['POST'])# Dosya yükleme
 def upload_file():
-    global filetext
     if 'file' not in request.files:
         return jsonify({"error": "Dosya bulunamadı."})
-
     uploaded_file = request.files['file']
     if uploaded_file.filename == '':
         return jsonify({"error": "Dosya adı boş olamaz."})
-
     if not allowed_file(uploaded_file.filename):
         return jsonify({"error": "Yalnızca .pdf, .docx ve .txt dosyaları desteklenmektedir."})
-
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
     try:
         uploaded_file.save(file_path)
-
         if os.path.getsize(file_path) == 0:
             return jsonify({"error": "Dosya boş. Lütfen geçerli bir dosya yükleyin."})
-
         # Dosya türüne göre yazı çıkarma
         if uploaded_file.filename.lower().endswith('.pdf'):
-            filetext = extract_text(file_path)  # PDF dosyasından yazı çıkarma
+            filetext = extract_text(file_path)
         elif uploaded_file.filename.lower().endswith('.txt'):
             with open(file_path, 'r', encoding='utf-8') as txt_file:
-                filetext = txt_file.read()  # TXT dosyasından yazı çıkarma
+                filetext = txt_file.read()
         elif uploaded_file.filename.lower().endswith('.docx'):
             doc = Document(file_path)
-            filetext = "\n".join([paragraph.text for paragraph in doc.paragraphs])  # DOCX dosyasından yazı çıkarma
+            filetext = "\n".join([paragraph.text for paragraph in doc.paragraphs])
         else:
             return jsonify({"error": "Desteklenmeyen dosya türü."})
-
-        return jsonify({"answer": uploaded_file.filename, "text": filetext})
-
+        # Kullanıcıya ait oturuma dosya metnini kaydet
+        session["filetext"] = filetext
+        return jsonify({"filename": uploaded_file.filename})
     except Exception as e:
         return jsonify({"error": f"Yazı işlenirken bir hata oluştu: {str(e)}"})
 
+# Mesaj gönderme fonksiyonu
 def message(prompt):
-    global conversation_history
-    global filetext
+    # Kullanıcının konuşma geçmişini sessiondan al, yoksa başlat.
+    conversation_history = session.get("conversation_history", [])
+    filetext = session.get("filetext", "")
 
-    # Kullanıcının mesajını Türkçe'den İngilizce'ye çevir
+    # Türkçe'den İngilizce'ye çevir
     translation_result = translator_tr_to_en(prompt)
     user_input_en = translation_result[0]['translation_text']
 
-    # Kullanıcının girdisini sohbet geçmişine ekle (etiket ekleyerek)
+    # Konuşma geçmişine kullanıcı mesajını ekle
     conversation_history.append(f"User: {user_input_en}")
-    if filetext != "":
+
+    # Eğer dosyadan metin yüklenmişse, bunu da konuşma geçmişine ekle ve temizle.
+    if filetext:
         conversation_history.append(f"PDF: {filetext}")
         conversation_history = conversation_history[-(MAX_HISTORY_LENGTH + 1):]
         filetext = ""
@@ -153,7 +156,7 @@ def message(prompt):
 
     # AI için açıklama metni (Kendi dil modelinize göre ayarlayabilirsiniz)
     prompt_text = (
-        "You are GaziAI. You are an helpful ai assistant. "
+        "You are GaziAI. You are a helpful ai assistant. "
         "You are a helpful assistant that provides information and answers to questions. "
         "You are a large language model trained by Gaziosmanpaşa University. "
         "Your role is to provide a concise, focused answer to the user's inquiry using only the conversation context "
@@ -191,11 +194,17 @@ def message(prompt):
     # Üretilen İngilizce cevabı Türkçe'ye çevirme
     translation_response = translator_en_to_tr(english_response)
     turkish_response = translation_response[0]['translation_text']
+    
+    # Asistanın verdiği cevabı da konuşma geçmişine ekle
+    conversation_history.append(f"Assistant: {english_response}")
+    session["conversation_history"] = conversation_history
+
     return turkish_response
 
+# Uygulama çalıştırma
 if __name__ == "__main__":
     print("Flask uygulaması çalışıyor!")
     app.run(debug=False)
     print("Flask uygulaması durduruldu.")
     print("GPU belleği temizleniyor...")
-    clear_gpu_memory() # GPU belleğini temizle
+    clear_gpu_memory()
