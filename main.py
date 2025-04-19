@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify, session
 import os
 from flask_cors import CORS
 from docx import Document
+import datetime
 
 __version__ = '0.4'
 __author__ = 'YousefHUT (Yusuf Eren HUT)'
@@ -126,9 +127,50 @@ def upload_file():
             return jsonify({"error": "Desteklenmeyen dosya türü."})
         # Kullanıcıya ait oturuma dosya metnini kaydet
         session["filetext"] = filetext
-        return jsonify({"filename": uploaded_file.filename})
+        return jsonify({"filename": uploaded_file.filename, "filetext": filetext})
+    except FileNotFoundError:
+        return jsonify({"error": "Dosya bulunamadı. Lütfen tekrar yükleyin."})
+    except PermissionError:
+        return jsonify({"error": "Dosya kaydedilemedi. İzinleri kontrol edin."})
+    except ValueError:
+        return jsonify({"error": "Dosya okunamadı. Lütfen geçerli bir dosya yükleyin."})
+    except OSError:
+        return jsonify({"error": "Dosya kaydedilemedi. Lütfen tekrar deneyin."})    
     except Exception as e:
         return jsonify({"error": f"Yazı işlenirken bir hata oluştu: {str(e)}"})
+    
+# Kullanıcı geri bildirimlerini işleme
+@app.route('/feedback', methods=['POST'])
+def feedback():
+    data = request.get_json()
+    # Gerekli alanların kontrolü
+    if not data or 'feedback' not in data or 'bot_message' not in data or 'user_message' not in data:
+        return jsonify({"error": "Gerekli geri bildirim bilgileri bulunamadı."}), 400
+
+    feedback_text = data['feedback'].strip().lower()
+    if feedback_text not in {"iyi", "kötü"}:
+        return jsonify({"error": "Geri bildirim 'iyi' veya 'kötü' olmalıdır."}), 400
+
+    bot_message = data.get("bot_message", "")
+    pdf_text = data.get("pdf_text", "")  # pdf'den çıkarılmış metin
+    user_message = data.get("user_message", "")
+
+    # Zaman damgası ve log satırı oluşturma: önce kullanıcı sorusu, sonra geri bildirim vb.
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = (
+        f"{now} - User: {user_message}\n"
+        f"Feedback: {feedback_text}\n"
+        f"PDF: {pdf_text}\n"
+        f"Bot: {bot_message}\n"
+        + "-" * 50 + "\n"
+    )
+
+    try:
+        with open("feedback_log.txt", "a", encoding="utf-8") as feedback_file:
+            feedback_file.write(log_entry)
+        return jsonify({"message": "Geri bildiriminiz kaydedildi."}), 200
+    except Exception as e:
+        return jsonify({"error": f"Geri bildirim kaydedilemedi: {str(e)}"}), 500
 
 # Mesaj gönderme fonksiyonu
 def message(prompt):

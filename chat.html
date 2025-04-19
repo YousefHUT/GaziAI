@@ -143,19 +143,23 @@
   <div id="drop-overlay">Dosyayı buraya bırakın</div>
 
   <script>
+    // Global değişkenler
+    window.lastUploadedPdfText = "";
+    window.latestUserMessage = "";
+  
     function toggleTheme() {
       document.body.classList.toggle('dark-theme');
     }
-
+  
     function navigateToHome() {
       fetch('/', { method: 'GET' })
         .then(r => r.ok && (window.location = '/'))
         .catch(console.error);
     }
-
+  
     const chatContainer = document.getElementById('chat-container');
     let inlineLoader = null;
-
+  
     function showLoader() {
       hideLoader();
       inlineLoader = document.createElement('div');
@@ -164,38 +168,60 @@
       chatContainer.appendChild(inlineLoader);
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
-
+  
     function hideLoader() {
       if (inlineLoader) {
         inlineLoader.remove();
         inlineLoader = null;
       }
     }
-
+  
+    // Mesaj ekleme fonksiyonu
     function addMessage(sender, text) {
       const m = document.createElement('div');
       m.className = `message ${sender}-message`;
       m.textContent = text;
       chatContainer.appendChild(m);
       chatContainer.scrollTop = chatContainer.scrollHeight;
+      return m;
     }
-
+  
+    // Bot mesajına geri bildirim butonlarını ekle
+    function displayFeedbackButtons(botReply) {
+      const botMsgElement = chatContainer.lastElementChild;
+      const feedbackDiv = document.createElement('div');
+      feedbackDiv.classList.add("feedback-buttons");
+      feedbackDiv.style.marginTop = "5px";
+      
+      // Hem bot cevabını hem de kullanıcının mesajını veri olarak saklıyoruz.
+      feedbackDiv.setAttribute('data-bot-message', botReply);
+      feedbackDiv.setAttribute('data-user-message', window.latestUserMessage);
+      
+      feedbackDiv.innerHTML = `
+        <button onclick="sendFeedback('iyi', this)" style="margin-right:5px;">Beğendim</button>
+        <button onclick="sendFeedback('kötü', this)">Beğenmedim</button>
+      `;
+      botMsgElement.appendChild(feedbackDiv);
+    }
+  
     function sendMessage() {
       const input = document.getElementById('user-input');
       const text = input.value.trim();
       if (!text) return;
+      window.latestUserMessage = text;
       addMessage('user', text);
       input.value = '';
       showLoader();
       fetch('/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json'},
         body: JSON.stringify({ message: text })
       })
       .then(r => r.json())
       .then(data => {
         hideLoader();
         addMessage('bot', data.reply);
+        displayFeedbackButtons(data.reply);
       })
       .catch(err => {
         console.error(err);
@@ -203,11 +229,11 @@
         addMessage('bot', 'Üzgünüz, bir şeyler ters gitti.');
       });
     }
-
+  
     function triggerFileDialog() {
       document.getElementById('file-input').click();
     }
-
+  
     function uploadFile() {
       const fileInput = document.getElementById('file-input');
       const file = fileInput.files[0];
@@ -215,7 +241,7 @@
       handleFileUpload(file);
       fileInput.value = "";
     }
-
+  
     function handleFileUpload(file) {
       if (!file) return;
       showLoader();
@@ -228,15 +254,15 @@
           if (data.error) {
             addMessage('bot', data.error);
             return;
-            
-          }
-          else if (data.message) {
+          } else if (data.message) {
             addMessage('bot', data.message);
             return;
-          }
-          else if (data.filename)
-          {
-            addMessage('bot', `Dosya yüklendi: ${data.message}`);
+          } else if (data.filename) {
+            let msg = `Dosya yüklendi: ${data.filename}`;
+            addMessage('bot', msg);
+            if (data.filetext) {
+              window.lastUploadedPdfText = data.filetext;
+            }
           }
         })
         .catch(err => {
@@ -245,16 +271,45 @@
           addMessage('bot', 'Üzgünüz, dosya yüklenirken bir hata oluştu.');
         });
     }
-
+  
+    // Geri bildirim gönderme fonksiyonu: Beğeni veya beğenmeme butonuna tıklanınca çalışır.
+    function sendFeedback(feedback, btn) {
+      const feedbackDiv = btn.parentElement;
+      const botMessage = feedbackDiv.getAttribute('data-bot-message') || '';
+      const userMessage = feedbackDiv.getAttribute('data-user-message') || '';
+      const pdfText = window.lastUploadedPdfText || '';
+  
+      const payload = {
+        feedback: feedback,
+        bot_message: botMessage,
+        pdf_text: pdfText,
+        user_message: userMessage
+      };
+  
+      fetch('/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(data => {
+        feedbackDiv.innerHTML = (feedback === 'iyi' ? 'Beğenildi' : 'Beğenilmedi');
+      })
+      .catch(err => {
+        console.error(err);
+        feedbackDiv.innerHTML = 'Geri bildirim gönderilemedi.';
+      });
+    }
+  
     let dragCounter = 0;
     const dropOverlay = document.getElementById('drop-overlay');
-
+  
     document.addEventListener('dragenter', function(e) {
       e.preventDefault();
       dragCounter++;
       dropOverlay.style.display = 'flex';
     });
-
+  
     document.addEventListener('dragleave', function(e) {
       e.preventDefault();
       dragCounter--;
@@ -262,11 +317,11 @@
         dropOverlay.style.display = 'none';
       }
     });
-
+  
     document.addEventListener('dragover', function(e) {
       e.preventDefault();
     });
-
+  
     document.addEventListener('drop', function(e) {
       e.preventDefault();
       dragCounter = 0;
@@ -276,5 +331,6 @@
       }
     });
   </script>
+  
 </body>
 </html>
