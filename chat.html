@@ -124,15 +124,15 @@
 <body>
   <header>
     <button onclick="navigateToHome()" style="background:none;border:none;color:white;font-size:1.2rem;cursor:pointer;">GaziAI</button>
-    <button onclick="toggleTheme()" style="background:none;border:1px solid white;color:white;padding:5px 10px;border-radius:5px;cursor:pointer;">Toggle Theme</button>
+    <button onclick="toggleTheme()" style="background:none;border:1px solid white;color:white;padding:5px 10px;border-radius:5px;cursor:pointer;">Temayı Değiştir</button>
   </header>
 
   <div id="chat-container"></div>
 
   <div id="input-container">
+    <button id="upload-button" onclick="triggerFileDialog()">+</button>
     <input type="text" id="user-input" placeholder="Mesajınızı buraya yazın…" onkeypress="if(event.key==='Enter') sendMessage()">
     <button onclick="sendMessage()">Gönder</button>
-    <button id="upload-button" onclick="triggerFileDialog()">Dosya Yükle</button>
   </div>
 
   <!-- Gizli dosya inputu -->

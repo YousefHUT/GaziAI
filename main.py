@@ -6,8 +6,8 @@ import os
 from flask_cors import CORS
 from docx import Document
 
-__version__ = '0.2'
-__author__ = 'YousefHUT'
+__version__ = '0.3'
+__author__ = 'YousefHUT (Yusuf Eren HUT)'
 
 print("GaziAI - Gaziosmanpaşa Üniversitesi Yapay Zeka Destekli Sohbet Botu programı başlatılıyor...")
 print("Yazılım versiyonu:", __version__)
@@ -33,8 +33,7 @@ if os.path.exists(app.config['UPLOAD_FOLDER']) and not SAVEFILES:
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file)
         if os.path.isfile(file_path):
             os.remove(file_path)
-filetext = "" #Dosya yazısı için olan değişteni belirleme
-
+filetext = "" #Dosya yazısı için olan değişkeni belirleme
 
 # Cihaza göre CUDA veya CPU kullanımı
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,6 +47,9 @@ model = model.half()  # FP16 moduna geçiş (Optimizasyon)
 model.to(device)
 
 # Çeviri pipeline'ları
+# https://huggingface.co/Helsinki-NLP/opus-mt-tr-en
+# https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr
+# Model dosyalarını yüklemek için Hugging Face üzerinden indirip "models" klasörüne doğru şekilde yerleştirin.
 translator_tr_to_en = pipeline(
     "translation",
     model="models/tr-to-en",      # Türkçe'den İngilizce
@@ -72,6 +74,7 @@ def clear_gpu_memory():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
 
+# Ana sayfa ve sohbet sayfası için route'lar
 @app.route('/')
 def index():
     with open('index.html', 'r', encoding='utf-8') as file:
@@ -123,9 +126,6 @@ def upload_file():
         else:
             return jsonify({"error": "Desteklenmeyen dosya türü."})
 
-        question = request.form.get('question', '')
-        if not question:
-            return jsonify({"error": "Soru alanı boş olamaz."})
         return jsonify({"answer": uploaded_file.filename, "text": filetext})
 
     except Exception as e:
@@ -148,56 +148,50 @@ def message(prompt):
     else:
         conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
 
-    # Sohbet geçmişini formatla (bu kısım sadece referans amaçlı, final yanıta eklenmeyecek)
+    # Sohbet geçmişini formatla
     formatted_history = "\n".join(conversation_history)
 
     # AI için açıklama metni (Kendi dil modelinize göre ayarlayabilirsiniz)
     prompt_text = (
-        "You are GaziAI, a highly capable and efficient AI support assistant. "
+        "You are GaziAI. You are an helpful ai assistant. "
+        "You are a helpful assistant that provides information and answers to questions. "
+        "You are a large language model trained by Gaziosmanpaşa University. "
         "Your role is to provide a concise, focused answer to the user's inquiry using only the conversation context "
         "and any supplemental content provided (such as PDF text). "
         "Do NOT repeat any conversation labels (e.g., 'User:' or 'GaziAI') or meta instructions in your final answer. "
-        "If asked about your language, reply with 'I am writing Turkish.' "
         "Answer the inquiry directly without echoing any instructions or context.\n\n"
         "Conversation context:\n" + formatted_history + "\n\nAnswer:"
     )
 
-    # Özel çıktılar
-    if user_input_en.lower().strip() in ["which language are you speaking?", "what language are you speaking?"]:
-        english_response = "I am writing Turkish."
-    if user_input_en.lower().strip() in ["whats your name", "Who are you"]:
-        english_response = "I am GaziAI. I am an helpful AI assistant"
-    else:
-        # Tokenize işlemi
-        inputs_tok = tokenizer(prompt_text, return_tensors="pt")
-        inputs_tok = {k: v.to(device) for k, v in inputs_tok.items()}
-        inputs_tok["input_ids"] = inputs_tok["input_ids"].clamp(0, tokenizer.vocab_size - 1)
+    # Tokenize işlemi
+    inputs_tok = tokenizer(prompt_text, return_tensors="pt")
+    inputs_tok = {k: v.to(device) for k, v in inputs_tok.items()}
+    inputs_tok["input_ids"] = inputs_tok["input_ids"].clamp(0, tokenizer.vocab_size - 1)
 
-        # Modelden İngilizce yanıt üretimi
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs_tok,
-                max_new_tokens=150,
-                do_sample=True,
-                temperature=0.5,
-                repetition_penalty=1.5,
-                top_k=30,
-                top_p=0.8,
-                eos_token_id=[tokenizer.eos_token_id]
-            )
+    # Modelden İngilizce yanıt üretimi (Cihazınıza ve modelinize göre ayarlayabilirsiniz)
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs_tok,
+            max_new_tokens=150,
+            do_sample=True,
+            temperature=0.2,
+            repetition_penalty=1.5,
+            top_k=30,
+            top_p=0.8,
+            eos_token_id=[tokenizer.eos_token_id]
+        )
 
-        # Üretilen yanıtı decode etme
-        english_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Üretilen yanıtı decode etme
+    english_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        # Yanıtı temizleme (etiketleri kaldırma)
-        if "Answer:" in english_response:
-            english_response = english_response.split("Answer:")[-1].strip()
+    # Yanıtı temizleme (etiketleri kaldırma)
+    if "Answer:" in english_response:
+        english_response = english_response.split("Answer:")[-1].strip()
 
     # Üretilen İngilizce cevabı Türkçe'ye çevirme
     translation_response = translator_en_to_tr(english_response)
     turkish_response = translation_response[0]['translation_text']
     return turkish_response
-
 
 if __name__ == "__main__":
     print("Flask uygulaması çalışıyor!")

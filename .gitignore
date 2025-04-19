@@ -3,4 +3,6 @@ __pycache__/
 api.txt
 uploads/
 deneme.py
-models/
+models/*
+Yapılacaklar.txt
+.gitignore
