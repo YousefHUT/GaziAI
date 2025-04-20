@@ -155,7 +155,7 @@ def feedback():
     pdf_text = data.get("pdf_text", "")  # pdf'den çıkarılmış metin
     user_message = data.get("user_message", "")
 
-    # Zaman damgası ve log satırı oluşturma: önce kullanıcı sorusu, sonra geri bildirim vb.
+    # Zaman damgası ve log satırı oluşturma
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entry = (
         f"{now} - User: {user_message}\n"
@@ -165,6 +165,7 @@ def feedback():
         + "-" * 50 + "\n"
     )
 
+    # Geri bildirimi dosyaya yazma
     try:
         with open("feedback_log.txt", "a", encoding="utf-8") as feedback_file:
             feedback_file.write(log_entry)
